@@ -1,0 +1,286 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>XOR Cracker</title>
+  <style>
+    :root{--bg:#0b0b0b;--card:#111;--accent:#b40000;--muted:#aaa}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Roboto,Arial;background:linear-gradient(180deg,#040404 0%, #121212 100%);color:#eee}
+    .wrap{max-width:980px;margin:36px auto;padding:28px}
+    header{display:flex;align-items:center;gap:16px}
+    h1{margin:0;font-size:20px;color:var(--accent)}
+    p.lead{color:var(--muted);margin:6px 0 22px}
+
+    .dirs{display:flex;gap:18px}
+    .dir{background:linear-gradient(180deg,#1a1a1a,#0f0f0f);border:1px solid rgba(255,255,255,0.04);padding:18px;border-radius:12px;width:220px;cursor:pointer;transition:transform .15s,box-shadow .15s}
+    .dir:hover{transform:translateY(-6px);box-shadow:0 10px 30px rgba(0,0,0,.6)}
+    .folder{height:40px;background:linear-gradient(180deg,#ffd8d8,#ffbcbc);border-radius:6px;margin-bottom:12px;padding:8px 12px;color:#300;display:flex;align-items:center;gap:8px;font-weight:600}
+    .folder::before{content:'/';opacity:.6}
+    .desc{color:var(--muted);font-size:13px}
+    .btn-small{display:inline-block;padding:6px 10px;border-radius:8px;background:#111;border:1px solid rgba(255,255,255,0.04);font-size:13px;color:var(--muted)}
+
+    section{display:none;margin-top:22px;background:var(--card);padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+    section:target{display:block}
+    body:not([data-hash]) section#home{display:block}
+
+    label{display:block;margin-top:10px;font-size:13px;color:var(--muted)}
+    input[type=text], textarea, select{width:100%;padding:10px;margin-top:6px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:#070707;color:#eee;font-size:13px}
+    textarea{min-height:100px}
+    .controls{display:flex;gap:12px;margin-top:12px}
+    .primary{background:var(--accent);color:#fff;border:none;padding:10px 12px;border-radius:8px;cursor:pointer}
+    .ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);padding:8px 10px;border-radius:8px;cursor:pointer}
+
+    .panel{display:grid;grid-template-columns:1fr 380px;gap:12px}
+    .box{background:#070707;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.02);font-family:monospace;font-size:13px;color:#dcdcdc}
+    .meta{font-size:13px;color:var(--muted);margin-top:8px}
+    pre{white-space:pre-wrap;word-break:break-word}
+
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+
+    @media (max-width:880px){.panel{grid-template-columns:1fr}} 
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div style="width:46px;height:46px;border-radius:10px;background:linear-gradient(180deg,#2b0000,#120000);display:flex;align-items:center;justify-content:center;font-weight:700">X</div>
+      <div>
+        <h1>XOR Cracker (decimal byte lists)</h1>
+        <div class="lead">Ciphertext must be provided as comma-separated decimal bytes, e.g. <code>25,20,29,29,30</code></div>
+      </div>
+    </header>
+
+    <section id="home">
+      <div class="dirs">
+        <a class="dir" href="#bruteforce" onclick="document.body.setAttribute('data-hash','1')">
+          <div class="folder">/bruteforce</div>
+          <div><strong>Random brute</strong></div>
+          <div class="desc">Continuously samples random repeating keys and applies to ciphertext until a match is found (must-contain or heuristic).</div>
+        </a>
+
+        <a class="dir" href="#crib" onclick="document.body.setAttribute('data-hash','1')">
+          <div class="folder">/known-crib</div>
+          <div><strong>Crib drag</strong></div>
+          <div class="desc">Provide a known substring (crib) and try positions/key-lengths to reconstruct the repeating key.</div>
+        </a>
+      </div>
+    </section>
+
+    <section id="bruteforce">
+      <h2 style="margin:0 0 8px 0;color:var(--accent)">Random Bruteforce</h2>
+      <div class="panel">
+        <div>
+          <label>Ciphertext (decimal bytes, comma separated)</label>
+          <textarea id="bf-cipher" placeholder="e.g. 25,20,29,29,30"></textarea>
+
+          <label>Max key length (1..)</label>
+          <input id="bf-maxlen" type="text" value="3" />
+
+          <label>Must-Contain (optional) — if the decoded plaintext contains this substring the run will stop and report success</label>
+          <input id="bf-must" type="text" placeholder="e.g. FLAG or the word 'the'" />
+
+          <div class="controls">
+            <button id="bf-start" class="primary">Start</button>
+            <button id="bf-stop" class="ghost">Stop</button>
+            <button id="bf-clear" class="ghost">Clear</button>
+          </div>
+
+          <div class="meta">This attempts random keys continuously and updates live. It will not freeze your browser; use Stop to cancel.</div>
+        </div>
+
+        <div>
+          <div class="box">
+            <div><strong>Status</strong></div>
+            <div id="bf-status">idle</div>
+            <hr />
+            <div><strong>Attempts:</strong> <span id="bf-attempts">0</span></div>
+            <div><strong>Last key (dec):</strong> <span id="bf-lastkey">-</span></div>
+            <div><strong>Last plaintext (preview):</strong></div>
+            <pre id="bf-lastpt">-</pre>
+            <hr />
+            <div><strong>Found result</strong></div>
+            <pre id="bf-found">(none)</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="crib">
+      <h2 style="margin:0 0 8px 0;color:var(--accent)">Known-string (Crib) Attack</h2>
+      <div class="panel">
+        <div>
+          <label>Ciphertext (decimal bytes, comma separated)</label>
+          <textarea id="crib-cipher" placeholder="e.g. 25,20,29,29,30"></textarea>
+
+          <label>Crib (known plaintext substring)</label>
+          <input id="crib-text" type="text" placeholder="e.g. the, FLAG{, GET /" />
+
+          <label>Max key length to try</label>
+          <input id="crib-maxlen" type="text" value="6" />
+
+          <div class="controls">
+            <button id="crib-run" class="primary">Run crib-drag</button>
+            <button id="crib-clear" class="ghost">Clear</button>
+          </div>
+
+          <div class="meta">This tries all positions where the crib fits and reconstructs repeating-key candidates for each key-length.</div>
+        </div>
+
+        <div>
+          <div class="box">
+            <div><strong>Results</strong></div>
+            <div id="crib-results">(no results)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // helpers
+    function parseDecimalList(s){
+      if(!s) return new Uint8Array(0);
+      // accept commas, spaces; allow trailing commas
+      const parts = s.split(/[,\s]+/).filter(x=>x.length>0);
+      const arr = new Uint8Array(parts.length);
+      for(let i=0;i<parts.length;i++){
+        const n = Number(parts[i]);
+        if(!Number.isFinite(n) || n<0 || n>255) throw new Error('Invalid byte at position '+i+': "'+parts[i]+'"');
+        arr[i]=n;
+      }
+      return arr;
+    }
+    function bytesToDecList(b){ return Array.from(b).join(',') }
+    function xorWithKey(buf, key){
+      const out = new Uint8Array(buf.length);
+      for(let i=0;i<buf.length;i++) out[i]=buf[i]^key[i%key.length];
+      return out;
+    }
+    function bytesToString(b){
+      try{return new TextDecoder().decode(b);}catch(e){return String.fromCharCode.apply(null,Array.from(b))}
+    }
+    function isMostlyPrintable(s){ if(!s||s.length===0) return false; let ok=0; for(let i=0;i<s.length;i++){ const c=s.charCodeAt(i); if(c>=32 && c<=126) ok++; } return (ok/s.length) > 0.9; }
+    function englishScore(s){ const freq = {'e':12.0,'t':9.1,'a':8.2,'o':7.5,'i':7.0,'n':6.7,' ':13.0}; s=s.toLowerCase(); let score=0; for(const ch in freq){ score+= (s.split(ch).length-1)*freq[ch]; } return score; }
+
+    // ---------- BRUTE FORCE (random) ----------
+    (function(){
+      const cipherEl = document.getElementById('bf-cipher');
+      const startBtn = document.getElementById('bf-start');
+      const stopBtn = document.getElementById('bf-stop');
+      const clearBtn = document.getElementById('bf-clear');
+      const maxlenEl = document.getElementById('bf-maxlen');
+      const mustEl = document.getElementById('bf-must');
+      const status = document.getElementById('bf-status');
+      const attemptsEl = document.getElementById('bf-attempts');
+      const lastKeyEl = document.getElementById('bf-lastkey');
+      const lastPtEl = document.getElementById('bf-lastpt');
+      const foundEl = document.getElementById('bf-found');
+
+      let running = false; let attempts=0; let stopRequested=false;
+      let cipherBytes = null;
+
+      function parseCipher(){ try{ cipherBytes = parseDecimalList(cipherEl.value); if(cipherBytes.length===0) {cipherBytes=null; return false;} return true;}catch(e){ cipherBytes=null; status.textContent=e.message; return false }}
+
+      startBtn.addEventListener('click', ()=>{
+        if(!parseCipher()){ if(!cipherBytes) { status.textContent='invalid input (expect comma-separated decimals like 25,20,29)'; } return }
+        stopRequested=false; running=true; status.textContent='running'; attempts=0; foundEl.textContent='(none)';
+        runLoop();
+      });
+      stopBtn.addEventListener('click', ()=>{ stopRequested=true; status.textContent='stopping...'; });
+      clearBtn.addEventListener('click', ()=>{ cipherEl.value=''; foundEl.textContent='(none)'; lastKeyEl.textContent='-'; lastPtEl.textContent='-'; attempts=0; attemptsEl.textContent='0'; status.textContent='idle'; });
+
+      function randomKey(len){ const k = new Uint8Array(len); crypto.getRandomValues(k); return k }
+
+      function runLoop(){
+        const maxlen = Math.max(1, Math.min(64, parseInt(maxlenEl.value)||3));
+        const mustContain = (mustEl.value||'').trim();
+
+        function stepBatch(){
+          for(let b=0;b<400;b++){
+            if(stopRequested) { running=false; status.textContent='stopped'; return; }
+            attempts++;
+            const keyLen = 1 + Math.floor(Math.random()*maxlen);
+            const key = randomKey(keyLen);
+            const plainBytes = xorWithKey(cipherBytes, key);
+            const plain = bytesToString(plainBytes);
+            if(attempts%50===0){ attemptsEl.textContent=attempts; lastKeyEl.textContent=bytesToDecList(key); lastPtEl.textContent=plain.slice(0,200); }
+
+            if(mustContain){ if(plain.includes(mustContain)){
+              foundEl.textContent = `FOUND (key dec=${bytesToDecList(key)}):\n`+plain; status.textContent='found'; running=false; return; }
+            } else {
+              if(isMostlyPrintable(plain) && englishScore(plain)>20){
+                foundEl.textContent = `POSSIBLE (key dec=${bytesToDecList(key)} | score=${englishScore(plain).toFixed(1)}):\n`+plain; status.textContent='found (heuristic)'; running=false; return;
+              }
+            }
+          }
+          if(!running) return; attemptsEl.textContent=attempts; setTimeout(stepBatch,1);
+        }
+        stepBatch();
+      }
+    })();
+
+    // ---------- CRIB/KNOWN-PLAINTEXT ----------
+    (function(){
+      const ciph = document.getElementById('crib-cipher');
+      const cribInput = document.getElementById('crib-text');
+      const runBtn = document.getElementById('crib-run');
+      const clearBtn = document.getElementById('crib-clear');
+      const maxlenEl = document.getElementById('crib-maxlen');
+      const out = document.getElementById('crib-results');
+
+      runBtn.addEventListener('click', ()=>{
+        out.innerHTML='working...';
+        try{
+          const cipher = parseDecimalList(ciph.value);
+          if(cipher.length===0){ out.textContent='Provide ciphertext as comma-separated decimals (e.g. 25,20,29).'; return }
+          const crib = (cribInput.value||'');
+          if(!crib){ out.textContent='Please provide a crib (known substring).'; return }
+          const cribBytes = new TextEncoder().encode(crib);
+          const maxlen = Math.max(1,Math.min(64,parseInt(maxlenEl.value)||6));
+
+          const results = [];
+          for(let keylen=1; keylen<=maxlen; keylen++){
+            for(let pos=0; pos+cribBytes.length<=cipher.length; pos++){
+              const derived = new Array(keylen).fill(null);
+              let conflict=false;
+              for(let i=0;i<cribBytes.length;i++){
+                const cbyte = cipher[pos+i];
+                const kbyte = cbyte ^ cribBytes[i];
+                const slot = (pos+i) % keylen;
+                if(derived[slot]===null) derived[slot]=kbyte; else if(derived[slot]!==kbyte){ conflict=true; break }
+              }
+              if(conflict) continue;
+              const candidateKey = new Uint8Array(keylen);
+              for(let i=0;i<keylen;i++) candidateKey[i] = (derived[i]===null)?0:derived[i];
+              const plain = bytesToString(xorWithKey(cipher, candidateKey));
+              if(plain.substr(pos, crib.length) === crib){
+                results.push({keylen,pos,keyDec:bytesToDecList(candidateKey),plaintext:plain});
+              }
+            }
+          }
+
+          if(results.length===0){ out.textContent='No exact-position candidates found using this simple reconstruction. Try larger max key length or different crib.'; return }
+
+          const list = document.createElement('div');
+          results.slice(0,60).forEach((r)=>{
+            const card = document.createElement('div'); card.style.marginBottom='12px';
+            card.innerHTML = `<div><strong>keylen=${r.keylen} pos=${r.pos} key=${r.keyDec}</strong></div><pre>${escapeHtml(r.plaintext)}</pre>`;
+            list.appendChild(card);
+          });
+          out.innerHTML=''; out.appendChild(list);
+
+        }catch(e){ out.textContent='Error: '+e.message }
+      });
+
+      clearBtn.addEventListener('click', ()=>{ ciph.value=''; cribInput.value=''; out.textContent='(no results)'; });
+
+      function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+    })();
+
+    window.addEventListener('hashchange', ()=>{ if(!location.hash) document.body.removeAttribute('data-hash') });
+  </script>
+</body>
+</html>
